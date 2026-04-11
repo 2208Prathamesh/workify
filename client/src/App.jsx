@@ -10,6 +10,7 @@ import Dashboard    from './pages/Dashboard'
 import JobFeed      from './pages/JobFeed'
 import PostJob      from './pages/PostJob'
 import MyJobs       from './pages/MyJobs'
+import JobDetails   from './pages/JobDetails'
 import Applicants   from './pages/Applicants'
 import Applications from './pages/Applications'
 import Profile      from './pages/Profile'
@@ -43,6 +44,7 @@ export default function App() {
               <Route path="/jobs"           element={<JobFeed />} />
               <Route path="/post-job"       element={<PostJob />} />
               <Route path="/my-jobs"        element={<MyJobs />} />
+              <Route path="/job/:id"        element={<JobDetails />} />
               <Route path="/applicants/:id" element={<Applicants />} />
               <Route path="/applications"   element={<Applications />} />
               <Route path="/profile"        element={<Profile />} />
