@@ -1,12 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'react-hot-toast'
-import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 import { JOB_CATEGORIES, PAY_TYPES } from '../lib/constants'
 
 export default function PostJob() {
-  const { user } = useAuth()
   const navigate = useNavigate()
 
   const [form, setForm] = useState({

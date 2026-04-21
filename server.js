@@ -23,7 +23,8 @@ app.use(session({
     path: sessionsDir,
     ttl: 7 * 24 * 60 * 60,
     reapInterval: 3600,
-    logFn: () => {}
+    logFn: () => {},
+    retries: 5
   }),
   secret: process.env.SESSION_SECRET || 'workify-secret-key-2026',
   resave: false,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'react-hot-toast'
 import { useAuth } from '../context/AuthContext'
@@ -72,7 +72,7 @@ export default function JobCard({ job, applied = false, onApply, initialSaved = 
       (perks.length > 0 ? `✨ Perks: ${perks.join(', ')}\n` : '') +
       (skills.length > 0 ? `🛠️ Skills: ${skills.join(', ')}\n` : '') +
       `\n📝 Details:\n${job.description}\n\n` +
-      `🔗 Apply safely on Workify: ${window.location.origin}/job/${job.id}`;
+      `🔗 Apply safely on Workify: ${window.location.origin}/`;
 
     if (!cardRef.current) return
     const toastId = toast.loading('Preparing to share...')
@@ -100,7 +100,7 @@ export default function JobCard({ job, applied = false, onApply, initialSaved = 
               files: [file]
             })
             shared = true
-          } catch (err) { console.log('Share photo error:', err) }
+          } catch { console.log('Share photo error') }
         }
 
         // Fallback 1: Try sharing just detailed text
@@ -111,7 +111,7 @@ export default function JobCard({ job, applied = false, onApply, initialSaved = 
               text: jobText
             })
             shared = true
-          } catch (err) { console.log('Share text error:', err) }
+          } catch { console.log('Share text error') }
         }
 
         // Fallback 2: Copy to clipboard

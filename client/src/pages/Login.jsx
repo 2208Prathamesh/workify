@@ -13,8 +13,6 @@ export default function Login() {
 
   useEffect(() => { if (user) navigate('/dashboard') }, [user, navigate])
 
-
-
   const handleSubmit = async e => {
     e.preventDefault()
     setLoading(true)

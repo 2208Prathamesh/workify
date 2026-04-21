@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react'
 import { toast } from 'react-hot-toast'
-import { api } from '../lib/api'
 import { useLang } from '../context/LangContext'
 
 export default function AvatarUpload({ currentUrl, name, onUploaded }) {

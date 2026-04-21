@@ -39,11 +39,3 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
-# Workify Specifics - DO NOT REMOVE
-*.db
-*.db-shm
-*.db-wal
-/sessions/
-/uploads/
-/client/dist
