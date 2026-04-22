@@ -1,226 +1,286 @@
-const express = require('express');
-const db = require('../db');
+const express  = require('express');
+const Job      = require('../models/Job');
+const SavedJob = require('../models/SavedJob');
+const User     = require('../models/User');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const router = express.Router();
+const { sendEmail } = require('../utils/email');
+const router   = express.Router();
 
-// GET /api/jobs — list active jobs (public for seekers, filtered for employers)
-router.get('/', (req, res) => {
+// ── Helper: serialise Mongoose doc to plain object with employer_name ───────
+function _fmt(job, employer) {
+  const obj = job.toObject ? job.toObject() : { ...job };
+  obj.id = obj._id.toString();
+  obj.employer_id = (obj.employer_id?._id || obj.employer_id)?.toString();
+  if (employer) obj.employer_name = employer.name;
+  return obj;
+}
+
+// GET /api/jobs — list active jobs
+router.get('/', async (req, res) => {
   try {
     const { search, location, skill } = req.query;
-    let query = `
-      SELECT j.*, u.name as employer_name
-      FROM jobs j
-      JOIN users u ON j.employer_id = u.id
-      WHERE j.status = 'active'
-    `;
-    const params = [];
+    const filter = { status: 'active' };
 
     if (search) {
-      query += ` AND (j.title LIKE ? OR j.description LIKE ?)`;
-      params.push(`%${search}%`, `%${search}%`);
+      filter.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+      ];
     }
-    if (location) {
-      query += ` AND j.location LIKE ?`;
-      params.push(`%${location}%`);
-    }
-    if (skill) {
-      query += ` AND j.skills_required LIKE ?`;
-      params.push(`%${skill}%`);
-    }
+    if (location) filter.location = { $regex: location, $options: 'i' };
+    if (skill)    filter.skills_required = { $regex: skill, $options: 'i' };
 
-    query += ` ORDER BY j.created_at DESC`;
-    const jobs = db.prepare(query).all(...params);
-    res.json({ jobs });
+    const jobs = await Job.find(filter)
+      .populate('employer_id', 'name')
+      .sort({ created_at: -1 })
+      .lean();
+
+    const out = jobs.map(j => ({
+      ...j,
+      id: j._id.toString(),
+      employer_name: j.employer_id?.name,
+      employer_id: j.employer_id?._id?.toString(),
+    }));
+
+    res.json({ jobs: out });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // GET /api/jobs/mine — employer's own jobs
-router.get('/mine', requireRole('employer'), (req, res) => {
+router.get('/mine', requireRole('employer'), async (req, res) => {
   try {
-    const jobs = db.prepare(`
-      SELECT j.*,
-        (SELECT COUNT(*) FROM applications WHERE job_id = j.id) as applicant_count
-      FROM jobs j
-      WHERE j.employer_id = ? AND j.status != 'removed'
-      ORDER BY j.created_at DESC
-    `).all(req.session.user.id);
-    res.json({ jobs });
+    const Application = require('../models/Application');
+    const jobs = await Job.find({
+      employer_id: req.session.user.id,
+      status: { $ne: 'removed' },
+    }).sort({ created_at: -1 }).lean();
+
+    const out = await Promise.all(jobs.map(async j => {
+      const count = await Application.countDocuments({ job_id: j._id });
+      return { ...j, id: j._id.toString(), employer_id: j.employer_id.toString(), applicant_count: count };
+    }));
+
+    res.json({ jobs: out });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/jobs/saved — seeker's saved jobs (server-side, no localStorage)
-router.get('/saved', requireAuth, (req, res) => {
+// GET /api/jobs/saved — seeker's saved jobs
+router.get('/saved', requireAuth, async (req, res) => {
   try {
-    const jobs = db.prepare(`
-      SELECT j.*, u.name as employer_name
-      FROM saved_jobs s
-      JOIN jobs j ON s.job_id = j.id
-      JOIN users u ON j.employer_id = u.id
-      WHERE s.user_id = ? AND j.status = 'active'
-      ORDER BY s.created_at DESC
-    `).all(req.session.user.id);
+    const saved = await SavedJob.find({ user_id: req.session.user.id })
+      .populate({ path: 'job_id', populate: { path: 'employer_id', select: 'name' } })
+      .sort({ created_at: -1 })
+      .lean();
+
+    const jobs = saved
+      .filter(s => s.job_id && s.job_id.status === 'active')
+      .map(s => ({
+        ...s.job_id,
+        id: s.job_id._id.toString(),
+        employer_name: s.job_id.employer_id?.name,
+        employer_id: s.job_id.employer_id?._id?.toString(),
+      }));
+
     res.json({ jobs });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 // GET /api/jobs/:id
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const job = db.prepare(`
-      SELECT j.*, u.name as employer_name
-      FROM jobs j JOIN users u ON j.employer_id = u.id
-      WHERE j.id = ?
-    `).get(req.params.id);
+    const job = await Job.findById(req.params.id)
+      .populate('employer_id', 'name')
+      .lean();
     if (!job) return res.status(404).json({ error: 'Job not found' });
-    res.json({ job });
+    res.json({
+      job: {
+        ...job,
+        id: job._id.toString(),
+        employer_name: job.employer_id?.name,
+        employer_id: job.employer_id?._id?.toString(),
+      }
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // POST /api/jobs — create a job (employer only)
-router.post('/', requireRole('employer'), (req, res) => {
+router.post('/', requireRole('employer'), async (req, res) => {
   try {
     const {
       title, description, skills_required, duration, salary, location,
       food_included, transport_included, category, pay_type, urgency, workers_needed
     } = req.body;
-    if (!title || !description) {
+    if (!title || !description)
       return res.status(400).json({ error: 'Title and description are required' });
+
+    const job = await Job.create({
+      employer_id: req.session.user.id,
+      title, description,
+      skills_required: skills_required || '',
+      duration: duration || '',
+      salary: salary || '',
+      location: location || '',
+      food_included:      !!food_included,
+      transport_included: !!transport_included,
+      category:      category || 'General',
+      pay_type:      pay_type || 'negotiable',
+      urgency:       urgency || 'normal',
+      workers_needed: workers_needed || 1,
+    });
+
+    res.json({ job: { ...job.toObject(), id: job._id.toString() } });
+
+    // --- Notify Seekers Asynchronously ---
+    try {
+      const seekers = await User.find({ role: 'seeker', email: { $exists: true, $ne: '' } }).lean();
+      const appUrl = process.env.PUBLIC_URL || 'http://localhost:3000';
+      const jobUrl = `${appUrl}/jobs`;
+
+      seekers.forEach(seeker => {
+        sendEmail(
+          seeker.email,
+          `💼 New Job Posted: ${job.title}`,
+          `<h3>Hi ${seeker.name},</h3><p>A new job has been posted that might interest you:</p><p><b>${job.title}</b> in ${job.location || 'your area'}</p><p><a href="${jobUrl}" style="background:#4CAF50;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;display:inline-block;margin-top:10px;">View Jobs →</a></p>`
+        ).catch(e => console.error('Email error:', e.message));
+      });
+    } catch (err) {
+      console.error('Failed to send job alerts:', err.message);
     }
-    const result = db.prepare(`
-      INSERT INTO jobs
-        (employer_id, title, description, skills_required, duration, salary, location,
-         food_included, transport_included, category, pay_type, urgency, workers_needed)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      req.session.user.id, title, description,
-      skills_required || '', duration || '', salary || '', location || '',
-      food_included ? 1 : 0, transport_included ? 1 : 0,
-      category || 'General', pay_type || 'negotiable',
-      urgency || 'normal', workers_needed || 1
-    );
-    const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(result.lastInsertRowid);
-    res.json({ job });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // PUT /api/jobs/:id — update a job
-router.put('/:id', requireRole('employer'), (req, res) => {
+router.put('/:id', requireRole('employer'), async (req, res) => {
   try {
-    const job = db.prepare('SELECT * FROM jobs WHERE id = ? AND employer_id = ?').get(req.params.id, req.session.user.id);
+    const job = await Job.findOne({ _id: req.params.id, employer_id: req.session.user.id });
     if (!job) return res.status(404).json({ error: 'Job not found' });
 
-    const { title, description, skills_required, duration, salary, location, food_included, transport_included, status } = req.body;
-    db.prepare(`
-      UPDATE jobs SET title=?, description=?, skills_required=?, duration=?, salary=?, location=?, food_included=?, transport_included=?, status=?
-      WHERE id = ?
-    `).run(
-      title || job.title, description || job.description,
-      skills_required !== undefined ? skills_required : job.skills_required,
-      duration !== undefined ? duration : job.duration,
-      salary !== undefined ? salary : job.salary,
-      location !== undefined ? location : job.location,
-      food_included !== undefined ? (food_included ? 1 : 0) : job.food_included,
-      transport_included !== undefined ? (transport_included ? 1 : 0) : job.transport_included,
-      status || job.status,
-      req.params.id
-    );
-    const updated = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
-    res.json({ job: updated });
+    const { title, description, skills_required, duration, salary, location,
+            food_included, transport_included, status } = req.body;
+
+    job.title              = title              ?? job.title;
+    job.description        = description        ?? job.description;
+    job.skills_required    = skills_required    ?? job.skills_required;
+    job.duration           = duration           ?? job.duration;
+    job.salary             = salary             ?? job.salary;
+    job.location           = location           ?? job.location;
+    job.food_included      = food_included      !== undefined ? !!food_included      : job.food_included;
+    job.transport_included = transport_included !== undefined ? !!transport_included : job.transport_included;
+    job.status             = status             ?? job.status;
+    await job.save();
+
+    res.json({ job: { ...job.toObject(), id: job._id.toString() } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// DELETE /api/jobs/:id
-router.delete('/:id', requireRole('employer', 'admin'), (req, res) => {
+// DELETE /api/jobs/:id — soft delete (status = removed)
+router.delete('/:id', requireRole('employer', 'admin'), async (req, res) => {
   try {
-    const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
+    const job = await Job.findById(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
-    // Employers can only delete their own jobs, admins can delete any
-    if (req.session.user.role === 'employer' && job.employer_id !== req.session.user.id) {
+    if (req.session.user.role === 'employer' && job.employer_id.toString() !== req.session.user.id) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    db.prepare("UPDATE jobs SET status = 'removed' WHERE id = ?").run(req.params.id);
+    await Job.findByIdAndUpdate(req.params.id, { status: 'removed' });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/jobs/:id/applicants — see applicants for a job (employer only)
-router.get('/:id/applicants', requireRole('employer', 'admin'), (req, res) => {
+// GET /api/jobs/:id/applicants — see applicants for a job
+router.get('/:id/applicants', requireRole('employer', 'admin'), async (req, res) => {
   try {
-    const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(req.params.id);
+    const Application = require('../models/Application');
+    const job = await Job.findById(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
-    if (req.session.user.role === 'employer' && job.employer_id !== req.session.user.id) {
+    if (req.session.user.role === 'employer' && job.employer_id.toString() !== req.session.user.id) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    const applicants = db.prepare(`
-      SELECT a.id, a.status, a.created_at, a.decline_reason, a.cancel_reason,
-             u.id as user_id, u.name, u.email, u.avatar_url, u.verified,
-             p.skills, p.location, p.availability, p.contact_phone, p.bio,
-             p.languages, p.daily_rate, p.whatsapp, p.availability_status, p.portfolio
-      FROM applications a
-      JOIN users u ON a.seeker_id = u.id
-      LEFT JOIN profiles p ON u.id = p.user_id
-      WHERE a.job_id = ?
-      ORDER BY a.created_at DESC
-    `).all(req.params.id);
 
-    // Scrub contact info if not accepted
-    const safeApplicants = applicants.map(app => {
-      if (app.status !== 'accepted') {
-        app.email = null;
-        app.contact_phone = null;
-        app.whatsapp = null;
-      }
+    const apps = await Application.find({ job_id: req.params.id })
+      .populate({
+        path: 'seeker_id',
+        select: 'name email avatar_url verified'
+      })
+      .sort({ created_at: -1 })
+      .lean();
+
+    // Fetch profiles separately for efficiency
+    const Profile = require('../models/Profile');
+    const applicants = await Promise.all(apps.map(async a => {
+      const profile = await Profile.findOne({ userId: a.seeker_id?._id }).lean();
+      const app = {
+        id:            a._id.toString(),
+        status:        a.status,
+        created_at:    a.created_at,
+        decline_reason: a.decline_reason,
+        cancel_reason:  a.cancel_reason,
+        user_id:       a.seeker_id?._id?.toString(),
+        name:          a.seeker_id?.name,
+        email:         a.status === 'accepted' ? a.seeker_id?.email : null,
+        avatar_url:    a.seeker_id?.avatar_url,
+        verified:      a.seeker_id?.verified,
+        skills:             profile?.skills || '',
+        location:           profile?.location || '',
+        availability:       profile?.availability || '',
+        contact_phone:      a.status === 'accepted' ? (profile?.contact_phone || '') : null,
+        bio:                profile?.bio || '',
+        languages:          profile?.languages || '',
+        daily_rate:         profile?.daily_rate || '',
+        whatsapp:           a.status === 'accepted' ? (profile?.whatsapp || '') : null,
+        availability_status: profile?.availability_status || '',
+        portfolio:          profile?.portfolio || [],
+      };
       return app;
-    });
+    }));
 
-    res.json({ applicants: safeApplicants });
+    res.json({ applicants });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/jobs/:id/save — save a job (server-side, replaces localStorage)
-router.post('/:id/save', requireAuth, (req, res) => {
+// POST /api/jobs/:id/save
+router.post('/:id/save', requireAuth, async (req, res) => {
   try {
-    db.prepare('INSERT OR IGNORE INTO saved_jobs (user_id, job_id) VALUES (?, ?)')
-      .run(req.session.user.id, req.params.id);
+    await SavedJob.findOneAndUpdate(
+      { user_id: req.session.user.id, job_id: req.params.id },
+      { user_id: req.session.user.id, job_id: req.params.id },
+      { upsert: true, new: true }
+    );
     res.json({ ok: true, saved: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// DELETE /api/jobs/:id/save — unsave a job
-router.delete('/:id/save', requireAuth, (req, res) => {
+// DELETE /api/jobs/:id/save
+router.delete('/:id/save', requireAuth, async (req, res) => {
   try {
-    db.prepare('DELETE FROM saved_jobs WHERE user_id = ? AND job_id = ?')
-      .run(req.session.user.id, req.params.id);
+    await SavedJob.deleteOne({ user_id: req.session.user.id, job_id: req.params.id });
     res.json({ ok: true, saved: false });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/jobs/:id/saved-status — check if a specific job is saved
-router.get('/:id/saved-status', requireAuth, (req, res) => {
+// GET /api/jobs/:id/saved-status
+router.get('/:id/saved-status', requireAuth, async (req, res) => {
   try {
-    const row = db.prepare('SELECT 1 FROM saved_jobs WHERE user_id = ? AND job_id = ?')
-      .get(req.session.user.id, req.params.id);
+    const row = await SavedJob.findOne({ user_id: req.session.user.id, job_id: req.params.id });
     res.json({ saved: !!row });
   } catch (err) {
     res.status(500).json({ error: err.message });

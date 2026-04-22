@@ -1,32 +1,39 @@
-const express = require('express');
-const db = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
-const { sendEmail } = require('../utils/email');
+const express     = require('express');
+const Application = require('../models/Application');
+const Job         = require('../models/Job');
+const User        = require('../models/User');
+const Notification = require('../models/Notification');
+const { requireRole } = require('../middleware/auth');
+const { sendEmail }   = require('../utils/email');
 const router = express.Router();
 
 // POST /api/applications — seeker applies to a job
-router.post('/', requireRole('seeker'), (req, res) => {
+router.post('/', requireRole('seeker'), async (req, res) => {
   try {
     const { job_id } = req.body;
     if (!job_id) return res.status(400).json({ error: 'job_id is required' });
 
-    const job = db.prepare("SELECT * FROM jobs WHERE id = ? AND status = 'active'").get(job_id);
+    const job = await Job.findOne({ _id: job_id, status: 'active' });
     if (!job) return res.status(404).json({ error: 'Job not found or not active' });
 
-    const existing = db.prepare('SELECT id FROM applications WHERE job_id = ? AND seeker_id = ?').get(job_id, req.session.user.id);
+    const existing = await Application.findOne({ job_id, seeker_id: req.session.user.id });
     if (existing) return res.status(409).json({ error: 'Already applied' });
 
-    db.prepare('INSERT INTO applications (job_id, seeker_id) VALUES (?, ?)').run(job_id, req.session.user.id);
-    
-    // Notify Employer (DB + Email)
-    db.prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'application', ?, ?)").run(job.employer_id, `New applicant for: ${job.title}`, `/applicants/${job.id}`);
-    const employer = db.prepare('SELECT email, name FROM users WHERE id = ?').get(job.employer_id);
-    if (employer && employer.email) {
-      sendEmail(employer.email, `New Application for ${job.title}`, `
-        <h3>Hi ${employer.name},</h3>
-        <p>You have received a new application for your job posting: <b>${job.title}</b>.</p>
-        <p>Login to your Workify dashboard to review the applicant.</p>
-      `);
+    await Application.create({ job_id, seeker_id: req.session.user.id });
+
+    // Notify employer
+    await Notification.create({
+      user_id: job.employer_id,
+      type: 'application',
+      message: `New applicant for: ${job.title}`,
+      link: `/applicants/${job._id}`,
+    });
+
+    const employer = await User.findById(job.employer_id).select('email name');
+    if (employer?.email) {
+      sendEmail(employer.email, `New Application for ${job.title}`,
+        `<h3>Hi ${employer.name},</h3><p>You have received a new application for your job posting: <b>${job.title}</b>.</p><p>Login to your Workify dashboard to review the applicant.</p>`
+      );
     }
 
     res.json({ ok: true });
@@ -36,19 +43,40 @@ router.post('/', requireRole('seeker'), (req, res) => {
 });
 
 // GET /api/applications — seeker views their applications
-router.get('/', requireRole('seeker'), (req, res) => {
+router.get('/', requireRole('seeker'), async (req, res) => {
   try {
-    const applications = db.prepare(`
-      SELECT a.*, j.title as job_title, j.salary, j.location as job_location, j.duration, j.status as job_status,
-             u.name as employer_name, u.email as employer_email, 
-             p.contact_phone as employer_phone, p.whatsapp as employer_whatsapp
-      FROM applications a
-      JOIN jobs j ON a.job_id = j.id
-      JOIN users u ON j.employer_id = u.id
-      LEFT JOIN profiles p ON u.id = p.user_id
-      WHERE a.seeker_id = ?
-      ORDER BY a.created_at DESC
-    `).all(req.session.user.id);
+    const apps = await Application.find({ seeker_id: req.session.user.id })
+      .populate({
+        path: 'job_id',
+        select: 'title salary location duration status employer_id',
+        populate: { path: 'employer_id', select: 'name email' },
+      })
+      .sort({ created_at: -1 })
+      .lean();
+
+    const Profile = require('../models/Profile');
+    const applications = await Promise.all(apps.map(async a => {
+      const empProfile = a.job_id?.employer_id?._id
+        ? await Profile.findOne({ userId: a.job_id.employer_id._id }).select('contact_phone whatsapp').lean()
+        : null;
+      return {
+        id:               a._id.toString(),
+        status:           a.status,
+        created_at:       a.created_at,
+        decline_reason:   a.decline_reason,
+        cancel_reason:    a.cancel_reason,
+        job_title:        a.job_id?.title,
+        salary:           a.job_id?.salary,
+        job_location:     a.job_id?.location,
+        duration:         a.job_id?.duration,
+        job_status:       a.job_id?.status,
+        employer_name:    a.job_id?.employer_id?.name,
+        employer_email:   a.job_id?.employer_id?.email,
+        employer_phone:   empProfile?.contact_phone || '',
+        employer_whatsapp: empProfile?.whatsapp || '',
+      };
+    }));
+
     res.json({ applications });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -56,40 +84,38 @@ router.get('/', requireRole('seeker'), (req, res) => {
 });
 
 // PUT /api/applications/:id — employer accepts/rejects
-router.put('/:id', requireRole('employer'), (req, res) => {
+router.put('/:id', requireRole('employer'), async (req, res) => {
   try {
     const { status, decline_reason } = req.body;
-    if (!['accepted', 'rejected'].includes(status)) {
+    if (!['accepted', 'rejected'].includes(status))
       return res.status(400).json({ error: 'Status must be accepted or rejected' });
-    }
-    const app = db.prepare(`
-      SELECT a.*, j.employer_id FROM applications a
-      JOIN jobs j ON a.job_id = j.id
-      WHERE a.id = ?
-    `).get(req.params.id);
-    if (!app) return res.status(404).json({ error: 'Application not found' });
-    if (app.employer_id !== req.session.user.id) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-    if (status === 'rejected') {
-      db.prepare('UPDATE applications SET status = ?, decline_reason = ? WHERE id = ?')
-        .run(status, decline_reason || '', req.params.id);
-    } else {
-      db.prepare('UPDATE applications SET status = ? WHERE id = ?').run(status, req.params.id);
-    }
-    
-    const seeker = db.prepare('SELECT email, name FROM users WHERE id = ?').get(app.seeker_id);
-    const job = db.prepare('SELECT title FROM jobs WHERE id = ?').get(app.job_id);
-    
-    if (job) {
-      db.prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'status', ?, ?)").run(app.seeker_id, `Application ${status}: ${job.title}`, '/applications');
-    }
 
-    if (seeker && seeker.email && job) {
+    const app = await Application.findById(req.params.id).populate('job_id');
+    if (!app) return res.status(404).json({ error: 'Application not found' });
+    if (app.job_id.employer_id.toString() !== req.session.user.id)
+      return res.status(403).json({ error: 'Forbidden' });
+
+    app.status = status;
+    if (status === 'rejected') app.decline_reason = decline_reason || '';
+    await app.save();
+
+    const seeker = await User.findById(app.seeker_id).select('email name');
+    const job    = app.job_id;
+
+    await Notification.create({
+      user_id: app.seeker_id,
+      type: 'status',
+      message: `Application ${status}: ${job.title}`,
+      link: '/applications',
+    });
+
+    if (seeker?.email) {
       if (status === 'accepted') {
-        sendEmail(seeker.email, `Application Accepted: ${job.title}`, `<h3>Congratulations ${seeker.name}!</h3><p>Your application for <b>${job.title}</b> has been accepted by the employer.</p>`);
+        sendEmail(seeker.email, `Application Accepted: ${job.title}`,
+          `<h3>Congratulations ${seeker.name}!</h3><p>Your application for <b>${job.title}</b> has been accepted by the employer.</p>`);
       } else {
-        sendEmail(seeker.email, `Application Update: ${job.title}`, `<h3>Hi ${seeker.name},</h3><p>Your application for <b>${job.title}</b> was reviewed but unfortunately not accepted at this time.</p>`);
+        sendEmail(seeker.email, `Application Update: ${job.title}`,
+          `<h3>Hi ${seeker.name},</h3><p>Your application for <b>${job.title}</b> was reviewed but unfortunately not accepted at this time.</p>`);
       }
     }
 
@@ -99,15 +125,15 @@ router.put('/:id', requireRole('employer'), (req, res) => {
   }
 });
 
-// DELETE /api/applications/:id — seeker withdraws their pending application
-router.delete('/:id', requireRole('seeker'), (req, res) => {
+// DELETE /api/applications/:id — seeker withdraws pending application
+router.delete('/:id', requireRole('seeker'), async (req, res) => {
   try {
-    const app = db.prepare('SELECT * FROM applications WHERE id = ? AND seeker_id = ?')
-      .get(req.params.id, req.session.user.id);
+    const app = await Application.findOne({ _id: req.params.id, seeker_id: req.session.user.id });
     if (!app) return res.status(404).json({ error: 'Application not found' });
-    if (app.status !== 'pending') return res.status(400).json({ error: 'Only pending applications can be withdrawn without approval' });
-    
-    db.prepare("UPDATE applications SET status = 'withdrawn' WHERE id = ?").run(req.params.id);
+    if (app.status !== 'pending')
+      return res.status(400).json({ error: 'Only pending applications can be withdrawn without approval' });
+
+    await Application.findByIdAndUpdate(req.params.id, { status: 'withdrawn' });
     res.json({ ok: true, withdrawn: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -115,25 +141,31 @@ router.delete('/:id', requireRole('seeker'), (req, res) => {
 });
 
 // POST /api/applications/:id/cancel — seeker requests cancel for accepted job
-router.post('/:id/cancel', requireRole('seeker'), (req, res) => {
+router.post('/:id/cancel', requireRole('seeker'), async (req, res) => {
   try {
     const { cancel_reason } = req.body;
     if (!cancel_reason?.trim()) return res.status(400).json({ error: 'Reason for cancellation required' });
 
-    const app = db.prepare('SELECT * FROM applications WHERE id = ? AND seeker_id = ?')
-      .get(req.params.id, req.session.user.id);
+    const app = await Application.findOne({ _id: req.params.id, seeker_id: req.session.user.id }).populate('job_id');
     if (!app) return res.status(404).json({ error: 'Application not found' });
     if (app.status !== 'accepted') return res.status(400).json({ error: 'Can only request cancel for accepted jobs' });
 
-    db.prepare("UPDATE applications SET status = 'cancel_requested', cancel_reason = ? WHERE id = ?")
-      .run(cancel_reason, req.params.id);
-      
-    const job = db.prepare('SELECT title, employer_id FROM jobs WHERE id = ?').get(app.job_id);
+    app.status        = 'cancel_requested';
+    app.cancel_reason = cancel_reason;
+    await app.save();
+
+    const job = app.job_id;
     if (job) {
-      db.prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'alert', ?, ?)").run(job.employer_id, `Worker cancellation requested: ${job.title}`, `/applicants/${job.id}`);
-      const employer = db.prepare('SELECT email, name FROM users WHERE id = ?').get(job.employer_id);
-      if (employer && employer.email) {
-        sendEmail(employer.email, `Worker Cancelled: ${job.title}`, `<h3>Hi ${employer.name},</h3><p>A worker has requested to cancel their assignment for <b>${job.title}</b>.</p><p>Reason: ${cancel_reason}</p><p>Please approve this cancellation in your dashboard to release the slot.</p>`);
+      await Notification.create({
+        user_id: job.employer_id,
+        type: 'alert',
+        message: `Worker cancellation requested: ${job.title}`,
+        link: `/applicants/${job._id}`,
+      });
+      const employer = await User.findById(job.employer_id).select('email name');
+      if (employer?.email) {
+        sendEmail(employer.email, `Worker Cancelled: ${job.title}`,
+          `<h3>Hi ${employer.name},</h3><p>A worker has requested to cancel their assignment for <b>${job.title}</b>.</p><p>Reason: ${cancel_reason}</p><p>Please approve this cancellation in your dashboard.</p>`);
       }
     }
 
@@ -144,29 +176,30 @@ router.post('/:id/cancel', requireRole('seeker'), (req, res) => {
 });
 
 // PUT /api/applications/:id/approve-cancel — employer approves seeker's cancel request
-router.put('/:id/approve-cancel', requireRole('employer'), (req, res) => {
+router.put('/:id/approve-cancel', requireRole('employer'), async (req, res) => {
   try {
-    const app = db.prepare(`
-      SELECT a.*, j.employer_id FROM applications a
-      JOIN jobs j ON a.job_id = j.id
-      WHERE a.id = ?
-    `).get(req.params.id);
-    
+    const app = await Application.findById(req.params.id).populate('job_id');
     if (!app) return res.status(404).json({ error: 'Application not found' });
-    if (app.employer_id !== req.session.user.id) return res.status(403).json({ error: 'Forbidden' });
-    if (app.status !== 'cancel_requested') return res.status(400).json({ error: 'No cancellation requested' });
+    if (app.job_id.employer_id.toString() !== req.session.user.id)
+      return res.status(403).json({ error: 'Forbidden' });
+    if (app.status !== 'cancel_requested')
+      return res.status(400).json({ error: 'No cancellation requested' });
 
-    db.prepare("UPDATE applications SET status = 'cancelled' WHERE id = ?").run(req.params.id);
-    
-    const seeker = db.prepare('SELECT email, name FROM users WHERE id = ?').get(app.seeker_id);
-    const job = db.prepare('SELECT title FROM jobs WHERE id = ?').get(app.job_id);
-    
-    if (job) {
-      db.prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'alert', ?, ?)").run(app.seeker_id, `Cancellation approved: ${job.title}`, '/applications');
-    }
+    await Application.findByIdAndUpdate(req.params.id, { status: 'cancelled' });
 
-    if (seeker && seeker.email && job) {
-      sendEmail(seeker.email, `Cancellation Approved: ${job.title}`, `<h3>Hi ${seeker.name},</h3><p>Your cancellation request for <b>${job.title}</b> has been approved by the employer.</p>`);
+    const seeker = await User.findById(app.seeker_id).select('email name');
+    const job    = app.job_id;
+
+    await Notification.create({
+      user_id: app.seeker_id,
+      type: 'alert',
+      message: `Cancellation approved: ${job.title}`,
+      link: '/applications',
+    });
+
+    if (seeker?.email) {
+      sendEmail(seeker.email, `Cancellation Approved: ${job.title}`,
+        `<h3>Hi ${seeker.name},</h3><p>Your cancellation request for <b>${job.title}</b> has been approved by the employer.</p>`);
     }
 
     res.json({ ok: true });

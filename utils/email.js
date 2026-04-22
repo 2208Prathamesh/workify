@@ -1,5 +1,5 @@
-const nodemailer = require('nodemailer');
-const db = require('../db');
+const nodemailer   = require('nodemailer');
+const SmtpSettings = require('../models/SmtpSettings');
 
 /**
  * Creates a nodemailer transporter.
@@ -7,7 +7,7 @@ const db = require('../db');
  */
 async function getTransporter() {
   try {
-    const settings = db.prepare('SELECT * FROM smtp_settings WHERE id = 1').get();
+    const settings = await SmtpSettings.findOne().lean();
     if (settings?.host && settings?.username && settings?.password && settings.password !== '••••••••') {
       console.log(`[SMTP] Using configured SMTP: ${settings.host}:${settings.port}`);
       return {
@@ -17,7 +17,7 @@ async function getTransporter() {
           secure: !!settings.secure,
           auth:   { user: settings.username, pass: settings.password },
         }),
-        from: `"${settings.sender_name || 'Workify'}" <${settings.sender_email || settings.username}>`,
+        from:       `"${settings.sender_name || 'Workify'}" <${settings.sender_email || settings.username}>`,
         isEthereal: false,
       };
     }
@@ -25,7 +25,7 @@ async function getTransporter() {
     console.warn('[SMTP] Could not read DB settings, falling back to Ethereal:', err.message);
   }
 
-  // Fallback: Ethereal (only in development or when SMTP not configured)
+  // Fallback: Ethereal (only in development)
   if (process.env.NODE_ENV === 'production') {
     console.error('[SMTP] No SMTP configured in production! Emails will not be sent.');
     return null;
@@ -42,7 +42,7 @@ async function getTransporter() {
     console.log(`[SMTP] Using Ethereal test SMTP (${testAccount.user})`);
     return {
       transporter,
-      from: '"Workify (Dev)" <notifications@workify.dev>',
+      from:       '"Workify (Dev)" <notifications@workify.dev>',
       isEthereal: true,
     };
   } catch (err) {
@@ -74,10 +74,6 @@ function wrapTemplate(htmlMsg) {
 
 /**
  * Sends an email with Workify wrapper.
- * @param {string} to       Recipient email
- * @param {string} subject  Email subject
- * @param {string} htmlMsg  HTML body (will be wrapped in Workify template)
- * @returns {{ ok: boolean, messageId?: string, previewUrl?: string }}
  */
 async function sendEmail(to, subject, htmlMsg) {
   if (!to || !to.includes('@')) {
@@ -117,12 +113,7 @@ async function sendRawEmail(to, subject, html) {
   if (!ctx) return { ok: false, error: 'SMTP not configured' };
 
   try {
-    const info = await ctx.transporter.sendMail({
-      from: ctx.from,
-      to,
-      subject,
-      html,
-    });
+    const info = await ctx.transporter.sendMail({ from: ctx.from, to, subject, html });
     console.log(`[SMTP] Raw message sent: ${info.messageId}`);
     const previewUrl = ctx.isEthereal ? nodemailer.getTestMessageUrl(info) : null;
     return { ok: true, messageId: info.messageId, previewUrl };

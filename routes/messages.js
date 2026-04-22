@@ -1,81 +1,118 @@
 const express = require('express');
-const db = require('../db');
+const mongoose = require('mongoose');
+const Message = require('../models/Message');
+const User    = require('../models/User');
 const { requireAuth } = require('../middleware/auth');
-const router = express.Router();
+const router  = express.Router();
 
-// All routes require auth
 router.use(requireAuth);
 
-// ── GET /api/messages — inbox (unique conversations) ──────────
-router.get('/', (req, res) => {
+// GET /api/messages — inbox (unique conversation threads)
+router.get('/', async (req, res) => {
   try {
-    const me = req.session.user.id;
+    const me = new mongoose.Types.ObjectId(req.session.user.id);
 
-    // Get all unique conversation partners with latest message + unread count
-    const threads = db.prepare(`
-      SELECT
-        other.id         AS partner_id,
-        other.name       AS partner_name,
-        other.avatar_url AS partner_avatar,
-        other.role       AS partner_role,
-        last_msg.content AS last_message,
-        last_msg.created_at AS last_at,
-        last_msg.from_id    AS last_from,
-        (SELECT COUNT(*) FROM messages
-         WHERE from_id = other.id AND to_id = ? AND is_read = 0) AS unread_count
-      FROM (
-        SELECT CASE WHEN from_id = ? THEN to_id ELSE from_id END AS other_id,
-               MAX(id) AS max_id
-        FROM messages
-        WHERE from_id = ? OR to_id = ?
-        GROUP BY other_id
-      ) conv
-      JOIN users other ON other.id = conv.other_id
-      JOIN messages last_msg ON last_msg.id = conv.max_id
-      ORDER BY last_msg.created_at DESC
-    `).all(me, me, me, me);
+    // Aggregate: group by partner, get last message + unread count
+    const threads = await Message.aggregate([
+      { $match: { $or: [{ from_id: me }, { to_id: me }] } },
+      { $sort:  { created_at: -1 } },
+      {
+        $group: {
+          _id:          { $cond: [{ $eq: ['$from_id', me] }, '$to_id', '$from_id'] },
+          last_message: { $first: '$content' },
+          last_at:      { $first: '$created_at' },
+          last_from:    { $first: '$from_id' },
+        },
+      },
+      { $sort: { last_at: -1 } },
+      {
+        $lookup: {
+          from:         'users',
+          localField:   '_id',
+          foreignField: '_id',
+          as:           'partner',
+        },
+      },
+      { $unwind: '$partner' },
+      {
+        $lookup: {
+          from: 'messages',
+          let:  { partnerId: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $and: [
+              { $eq: ['$from_id', '$$partnerId'] },
+              { $eq: ['$to_id', me] },
+              { $eq: ['$is_read', false] },
+            ] } } },
+            { $count: 'n' },
+          ],
+          as: 'unreadArr',
+        },
+      },
+      {
+        $project: {
+          partner_id:     '$partner._id',
+          partner_name:   '$partner.name',
+          partner_avatar: '$partner.avatar_url',
+          partner_role:   '$partner.role',
+          last_message:   1,
+          last_at:        1,
+          last_from:      1,
+          unread_count:   { $ifNull: [{ $arrayElemAt: ['$unreadArr.n', 0] }, 0] },
+        },
+      },
+    ]);
 
-    const totalUnread = db.prepare(`
-      SELECT COUNT(*) AS cnt FROM messages WHERE to_id = ? AND is_read = 0
-    `).get(me)?.cnt || 0;
+    const totalUnread = await Message.countDocuments({ to_id: me, is_read: false });
 
-    res.json({ threads, totalUnread });
+    const out = threads.map(t => ({
+      ...t,
+      partner_id: t.partner_id.toString(),
+    }));
+
+    res.json({ threads: out, totalUnread });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── GET /api/messages/thread/:partnerId — full conversation ───
-router.get('/thread/:partnerId', (req, res) => {
+// GET /api/messages/thread/:partnerId — full conversation
+router.get('/thread/:partnerId', async (req, res) => {
   try {
-    const me = req.session.user.id;
-    const partner = parseInt(req.params.partnerId);
+    const me      = new mongoose.Types.ObjectId(req.session.user.id);
+    const partner = new mongoose.Types.ObjectId(req.params.partnerId);
 
-    const messages = db.prepare(`
-      SELECT m.*, j.title AS job_title
-      FROM messages m
-      LEFT JOIN jobs j ON m.job_id = j.id
-      WHERE (m.from_id = ? AND m.to_id = ?) OR (m.from_id = ? AND m.to_id = ?)
-      ORDER BY m.created_at ASC
-    `).all(me, partner, partner, me);
+    const messages = await Message.find({
+      $or: [
+        { from_id: me,      to_id: partner },
+        { from_id: partner, to_id: me      },
+      ],
+    })
+      .populate('job_id', 'title')
+      .sort({ created_at: 1 })
+      .lean();
 
     // Mark incoming as read
-    db.prepare(`
-      UPDATE messages SET is_read = 1 WHERE from_id = ? AND to_id = ? AND is_read = 0
-    `).run(partner, me);
+    await Message.updateMany({ from_id: partner, to_id: me, is_read: false }, { is_read: true });
 
-    const partnerUser = db.prepare(
-      'SELECT id, name, avatar_url, role FROM users WHERE id = ?'
-    ).get(partner);
+    const partnerUser = await User.findById(partner).select('id name avatar_url role').lean();
 
-    res.json({ messages, partner: partnerUser });
+    const out = messages.map(m => ({
+      ...m,
+      id:       m._id.toString(),
+      from_id:  m.from_id.toString(),
+      to_id:    m.to_id.toString(),
+      job_title: m.job_id?.title || null,
+    }));
+
+    res.json({ messages: out, partner: partnerUser ? { ...partnerUser, id: partnerUser._id.toString() } : null });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── POST /api/messages — send a message ───────────────────────
-router.post('/', (req, res) => {
+// POST /api/messages — send a message
+router.post('/', async (req, res) => {
   try {
     const { to_id, content, job_id } = req.body;
     const from_id = req.session.user.id;
@@ -85,29 +122,26 @@ router.post('/', (req, res) => {
     if (to_id === from_id)
       return res.status(400).json({ error: 'Cannot message yourself' });
 
-    // Verify recipient exists
-    const recipient = db.prepare('SELECT id FROM users WHERE id = ?').get(to_id);
+    const recipient = await User.findById(to_id).select('_id');
     if (!recipient) return res.status(404).json({ error: 'Recipient not found' });
 
-    const result = db.prepare(`
-      INSERT INTO messages (from_id, to_id, job_id, content)
-      VALUES (?, ?, ?, ?)
-    `).run(from_id, to_id, job_id || null, content.trim());
+    const msg = await Message.create({
+      from_id, to_id,
+      job_id:  job_id || null,
+      content: content.trim(),
+    });
 
-    const msg = db.prepare('SELECT * FROM messages WHERE id = ?').get(result.lastInsertRowid);
-    res.json({ ok: true, message: msg });
+    res.json({ ok: true, message: { ...msg.toObject(), id: msg._id.toString() } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── GET /api/messages/unread — unread count (for badge) ───────
-router.get('/unread', (req, res) => {
+// GET /api/messages/unread — unread count (badge)
+router.get('/unread', async (req, res) => {
   try {
-    const row = db.prepare(
-      'SELECT COUNT(*) AS cnt FROM messages WHERE to_id = ? AND is_read = 0'
-    ).get(req.session.user.id);
-    res.json({ count: row?.cnt || 0 });
+    const count = await Message.countDocuments({ to_id: req.session.user.id, is_read: false });
+    res.json({ count });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

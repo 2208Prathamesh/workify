@@ -1,53 +1,51 @@
-const express = require('express');
-const db = require('../db');
+const express      = require('express');
+const Notification = require('../models/Notification');
 const { requireAuth } = require('../middleware/auth');
-const router = express.Router();
+const router       = express.Router();
 
 router.use(requireAuth);
 
 // GET /api/notifications
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const filter = req.query.filter || 'all';
-    let query = 'SELECT * FROM notifications WHERE user_id = ?';
-    const params = [req.user.id];
+    const query  = { user_id: req.session.user.id };
+    if (filter === 'unread') query.is_read = false;
 
-    if (filter === 'unread') {
-      query += ' AND is_read = 0';
-    }
+    const notifs = await Notification.find(query)
+      .sort({ created_at: -1 })
+      .limit(50)
+      .lean();
 
-    query += ' ORDER BY created_at DESC LIMIT 50';
+    const unreadCount = await Notification.countDocuments({
+      user_id: req.session.user.id, is_read: false,
+    });
 
-    const notifs = db.prepare(query).all(...params);
-    const unreadCount = db.prepare('SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND is_read = 0').get(req.user.id).c;
-
-    res.json({ notifications: notifs, unreadCount });
+    const out = notifs.map(n => ({ ...n, id: n._id.toString(), user_id: n.user_id.toString() }));
+    res.json({ notifications: out, unreadCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// PUT /api/notifications/:id/read
-router.put('/:id/read', (req, res) => {
+// PUT /api/notifications/read-all — must be BEFORE /:id
+router.put('/read-all', async (req, res) => {
   try {
-    if (req.params.id === 'read-all') {
-      // Handled by next route if exact match not possible due to routing order, 
-      // but to be safe let's just use the strict numerical id regex or handle 'read-all' exclusively
-      return res.status(400).json({ error: 'Use /read-all endpoint' });
-    }
-    const id = req.params.id;
-    const result = db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?').run(id, req.user.id);
-    if (result.changes === 0) return res.status(404).json({ error: 'Notification not found' });
+    await Notification.updateMany({ user_id: req.session.user.id, is_read: false }, { is_read: true });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// PUT /api/notifications/read-all
-router.put('/read-all', (req, res) => {
+// PUT /api/notifications/:id/read
+router.put('/:id/read', async (req, res) => {
   try {
-    db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0').run(req.user.id);
+    const result = await Notification.findOneAndUpdate(
+      { _id: req.params.id, user_id: req.session.user.id },
+      { is_read: true },
+    );
+    if (!result) return res.status(404).json({ error: 'Notification not found' });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

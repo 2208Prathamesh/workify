@@ -1,69 +1,74 @@
-const express = require('express');
-const db = require('../db');
+const express     = require('express');
+const Rating      = require('../models/Rating');
+const Application = require('../models/Application');
+const User        = require('../models/User');
+const Job         = require('../models/Job');
 const { requireAuth } = require('../middleware/auth');
-const router = express.Router();
+const router      = express.Router();
 
-// ── GET /api/ratings/user/:id — public ratings for a seeker ───
-router.get('/user/:id', (req, res) => {
+// GET /api/ratings/user/:id — public ratings for a seeker
+router.get('/user/:id', async (req, res) => {
   try {
-    const ratings = db.prepare(`
-      SELECT r.id, r.stars, r.review, r.created_at,
-             u.name AS reviewer_name, u.avatar_url AS reviewer_avatar,
-             j.title AS job_title
-      FROM ratings r
-      JOIN users u ON r.employer_id = u.id
-      LEFT JOIN jobs j ON r.job_id = j.id
-      WHERE r.seeker_id = ?
-      ORDER BY r.created_at DESC
-    `).all(req.params.id);
+    const ratings = await Rating.find({ seeker_id: req.params.id })
+      .populate('employer_id', 'name avatar_url')
+      .populate('job_id',      'title')
+      .sort({ created_at: -1 })
+      .lean();
 
-    const avg = ratings.length > 0
-      ? (ratings.reduce((s, r) => s + r.stars, 0) / ratings.length).toFixed(1)
+    const out = ratings.map(r => ({
+      id:              r._id.toString(),
+      stars:           r.stars,
+      review:          r.review,
+      created_at:      r.created_at,
+      reviewer_name:   r.employer_id?.name,
+      reviewer_avatar: r.employer_id?.avatar_url,
+      job_title:       r.job_id?.title,
+    }));
+
+    const avg = out.length > 0
+      ? parseFloat((out.reduce((s, r) => s + r.stars, 0) / out.length).toFixed(1))
       : null;
 
-    res.json({ ratings, avg: avg ? parseFloat(avg) : null, count: ratings.length });
+    res.json({ ratings: out, avg, count: out.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── POST /api/ratings — employer rates a seeker ───────────────
-router.post('/', requireAuth, (req, res) => {
-  if (req.session.user.role !== 'employer' && req.session.user.role !== 'admin') {
+// POST /api/ratings — employer rates a seeker
+router.post('/', requireAuth, async (req, res) => {
+  if (!['employer', 'admin'].includes(req.session.user.role))
     return res.status(403).json({ error: 'Only employers can rate workers' });
-  }
+
   try {
     const { seeker_id, job_id, stars, review } = req.body;
     if (!seeker_id || !stars) return res.status(400).json({ error: 'seeker_id and stars are required' });
     if (stars < 1 || stars > 5) return res.status(400).json({ error: 'Stars must be between 1 and 5' });
 
-    // Verify the employer actually hired this seeker (accepted application)
+    // Verify the employer actually hired this seeker
     if (job_id) {
-      const hired = db.prepare(`
-        SELECT 1 FROM applications
-        WHERE job_id=? AND seeker_id=? AND status='accepted'
-      `).get(job_id, seeker_id);
+      const hired = await Application.findOne({
+        job_id, seeker_id, status: 'accepted',
+      });
       if (!hired) return res.status(403).json({ error: 'You can only rate workers you have hired' });
     }
 
-    const result = db.prepare(`
-      INSERT INTO ratings (seeker_id, employer_id, job_id, stars, review)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(seeker_id, employer_id, job_id) DO UPDATE SET
-        stars=excluded.stars, review=excluded.review, created_at=datetime('now')
-    `).run(seeker_id, req.session.user.id, job_id || null, stars, review || '');
+    const rating = await Rating.findOneAndUpdate(
+      { seeker_id, employer_id: req.session.user.id, job_id: job_id || null },
+      { stars, review: review || '', created_at: new Date() },
+      { upsert: true, new: true }
+    );
 
-    res.json({ ok: true, id: result.lastInsertRowid });
+    res.json({ ok: true, id: rating._id.toString() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── DELETE /api/ratings/:id — employer deletes own rating ─────
-router.delete('/:id', requireAuth, (req, res) => {
+// DELETE /api/ratings/:id — employer deletes own rating
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
-    db.prepare('DELETE FROM ratings WHERE id=? AND employer_id=?')
-      .run(req.params.id, req.session.user.id);
+    await Rating.findOneAndDelete({ _id: req.params.id, employer_id: req.session.user.id });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
