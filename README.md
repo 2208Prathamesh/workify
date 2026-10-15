@@ -1,116 +1,252 @@
-<!-- Workify README -->
-
 <div align="center">
 
 # Workify
-
 ### Work for Everyone.
 
-**A community-focused job platform connecting people looking for work with employers who need reliable workers.**
+**Connecting people with opportunities and employers with the right workers.**
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-workify.buildto.in-FF6B35?style=for-the-badge&logo=vercel&logoColor=white)](https://workify.buildto.in)
+A community-focused job platform designed to make work discovery and hiring more accessible, including for people seeking local and daily-wage employment.
+
+<br />
+
+[![Live Website](https://img.shields.io/badge/Live%20Website-Visit%20Workify-FF6B35?style=for-the-badge)](https://workify.buildto.in)
 [![Node.js](https://img.shields.io/badge/Node.js-Backend-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![Express](https://img.shields.io/badge/Express.js-API-000000?style=for-the-badge&logo=express)](https://expressjs.com/)
+[![Express.js](https://img.shields.io/badge/Express.js-Framework-black?style=for-the-badge&logo=express)](https://expressjs.com/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-Database-47A248?style=for-the-badge&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
+[![JavaScript](https://img.shields.io/badge/JavaScript-Language-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
 
-**Discover opportunities. Connect with employers. Find the right people for the work.**
+[Explore the Project](https://github.com/2208Prathamesh/workify) · [Report a Bug](https://github.com/2208Prathamesh/workify/issues)
+
+**Discover opportunities. Build connections. Make work accessible.**
 
 </div>
 
 ---
 
-## 📌 About
+## 📌 Overview
 
-**Workify** is a web-based job platform designed to make work discovery and worker hiring more accessible. It brings job seekers and employers into one place, with a focus on practical opportunities—including local and daily-work roles that may not require a traditional résumé.
+**Workify** is a web-based job discovery and worker-hiring platform built to connect job seekers with employers through a common digital space.
 
-Job seekers can create a profile and explore available jobs, while employers can publish opportunities and manage applications. Workify also includes supporting features for communication, notifications, ratings, and administration.
+Traditional job portals often focus on formal employment and résumé-based applications. Workify aims to make finding work more approachable, particularly for people looking for local jobs, practical work opportunities, and daily-wage employment.
 
-> **Mission:** Make finding work and finding workers simpler, more approachable, and more accessible.
+The platform brings together job seekers, employers, and administrators through role-based accounts, job listings, application management, user profiles, messaging, notifications, and ratings.
 
-## ✨ Features
+Whether someone is searching for work or looking for suitable workers, Workify provides a centralized platform to discover opportunities and manage connections.
 
-- **Role-based accounts** — Separate experiences for job seekers, employers, and administrators.
-- **Authentication and sessions** — Account login with password hashing and server-side sessions.
-- **Job listings** — Publish, browse, and manage job opportunities.
-- **Applications** — Submit applications and track application status.
-- **Worker profiles** — Keep skills, experience, location, and other profile information in one place.
-- **Messaging** — Communication support between platform users.
-- **Notifications** — Keep users informed about relevant activity.
-- **Ratings and feedback** — Reputation features to support more informed decisions.
-- **Saved jobs** — Save opportunities for later.
-- **Profile image uploads** — Cloudinary integration for media storage.
-- **Email support** — Nodemailer-based email utilities, configurable for your SMTP provider.
-- **Admin tools** — Administrative routes for platform management.
-- **Deployment-ready structure** — Express server configured to serve the built frontend and support Vercel deployment.
+### 🎯 Vision
 
-*Feature availability may depend on the current deployment configuration and environment variables.*
+To make employment opportunities more accessible by simplifying how people discover work and how employers connect with potential workers.
 
-## 🧰 Tech Stack
+### 💡 Problem Statement
 
-| Layer | Technologies |
+Many people face challenges when searching for suitable employment, including limited access to job information, dependence on informal networks, and the complexity of traditional recruitment processes.
+
+Employers can also struggle to find available workers with the skills and location preferences needed for a job.
+
+Workify aims to address these challenges through a digital platform that brings job discovery, worker profiles, and hiring workflows together in one place.
+
+## ✨ Key Features
+
+### 👤 User Management
+- Role-based accounts for job seekers, employers, and administrators.
+- Authentication with password hashing.
+- Session-based login management.
+- Individual user profiles.
+
+### 💼 Job Discovery and Hiring
+- Create and manage job listings.
+- Browse available work opportunities.
+- Submit applications for relevant jobs.
+- Track application statuses.
+- Save job opportunities for later.
+- Manage job availability and listing status.
+
+### 🧑‍🔧 Worker Profiles
+- Maintain personal and professional information.
+- Showcase skills, experience, and location.
+- Support profile images and media uploads.
+- Help employers discover potentially suitable workers.
+
+### 💬 Communication and Engagement
+- Messaging functionality for platform users.
+- Notifications for relevant activities.
+- Ratings and feedback functionality.
+
+### 🛡️ Administration
+- Dedicated administrative API routes.
+- User and platform management capabilities.
+- Configurable email-related settings.
+
+*Available features depend on the current application implementation and service configuration.*
+
+## 🧰 Technology Stack
+
+| Component | Technology |
 |---|---|
-| Frontend | HTML, CSS, JavaScript, bundled web assets |
-| Backend | Node.js, Express.js |
-| Database / ODM | MongoDB, Mongoose |
-| Authentication | bcryptjs, express-session, connect-mongo |
-| File uploads | Multer, Cloudinary, multer-storage-cloudinary |
-| Email | Nodemailer |
-| Configuration | dotenv |
+| Frontend | React-based bundled UI, HTML, CSS, JavaScript |
+| Backend | Node.js |
+| Web framework | Express.js |
+| Database | MongoDB |
+| Object Data Modeling | Mongoose |
+| Authentication support | bcryptjs |
+| Session management | express-session, connect-mongo |
+| Image and file uploads | Multer, Cloudinary |
+| Email functionality | Nodemailer |
+| Environment configuration | dotenv |
 | Deployment configuration | Vercel |
 
-## 🏗️ Project Structure
+## 🏗️ System Architecture
+
+Workify follows a client-server architecture. The frontend communicates with backend API routes, while the backend handles application logic, authentication, database operations, and supporting services.
+
+```text
+                 ┌────────────────────────┐
+                 │        Workify         │
+                 │      Web Frontend      │
+                 └────────────┬───────────┘
+                              │
+                         HTTP / API
+                              │
+                 ┌────────────▼───────────┐
+                 │      Express.js        │
+                 │     Backend Server     │
+                 └────────────┬───────────┘
+                              │
+              ┌───────────────┼────────────────┐
+              │               │                │
+      ┌───────▼───────┐ ┌─────▼─────┐ ┌────────▼────────┐
+      │ Authentication│ │ Job and   │ │ Profiles and    │
+      │ and Sessions  │ │ Applications│ │ Communication  │
+      └───────────────┘ └─────┬─────┘ └─────────────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │      MongoDB      │
+                    │ Persistent Storage│
+                    └───────────────────┘
+
+       Supporting services: Cloudinary and Email
+```
+
+## 📂 Project Structure
 
 ```text
 workify/
-├── public/                 # Frontend assets and static files
-│   ├── assets/             # Bundled frontend assets
-│   ├── css/
-│   ├── js/
-│   └── index.html
-├── routes/                 # Express API route handlers
-│   ├── auth.js
-│   ├── jobs.js
-│   ├── applications.js
-│   ├── profile.js
-│   ├── messages.js
-│   ├── notifications.js
-│   ├── ratings.js
-│   └── admin.js
-├── models/                 # Mongoose data models
 ├── lib/
-│   └── mongoose.js         # MongoDB connection and initial setup
+│   └── mongoose.js          # Database connection and initialization
+├── models/
+│   ├── Application.js       # Job application model
+│   ├── Job.js               # Job listing model
+│   ├── Message.js            # Messaging model
+│   ├── Notification.js       # Notification model
+│   ├── Profile.js            # User profile model
+│   ├── Rating.js             # Rating model
+│   ├── SavedJob.js           # Saved jobs model
+│   ├── SmtpSettings.js       # Email configuration model
+│   └── User.js               # User model
+├── public/
+│   ├── assets/              # Bundled frontend assets
+│   ├── css/                 # Stylesheets
+│   ├── js/                  # Frontend JavaScript
+│   └── index.html           # Frontend entry point
+├── routes/
+│   ├── admin.js             # Administrative operations
+│   ├── applications.js      # Application endpoints
+│   ├── auth.js              # Authentication endpoints
+│   ├── jobs.js              # Job endpoints
+│   ├── messages.js          # Messaging endpoints
+│   ├── notifications.js     # Notification endpoints
+│   ├── profile.js           # Profile endpoints
+│   └── ratings.js           # Rating endpoints
 ├── utils/
-│   └── email.js            # Email utilities
-├── server.js               # Express server and route registration
-├── .env.example            # Environment variable template
+│   └── email.js             # Email utilities
+├── .env.example             # Environment variable template
+├── .gitignore
+├── db.js                    # SQLite database module
 ├── package.json
-└── vercel.json             # Vercel routing configuration
+├── package-lock.json
+├── server.js                # Express application entry point
+└── vercel.json              # Vercel deployment configuration
 ```
+
+The main application server uses MongoDB through Mongoose. `db.js` contains a separate SQLite database module and is not the database connection used by the main server.
+
+## 🌍 Sustainable Development Goals (SDGs)
+
+Workify is designed with social accessibility and employment opportunities in mind. Its intended impact aligns with the United Nations Sustainable Development Goals.
+
+### 🟢 SDG 8 — Decent Work and Economic Growth
+
+**Primary alignment**
+
+Workify aims to support access to employment opportunities by helping job seekers discover work and enabling employers to find potential workers.
+
+**How Workify aligns:**
+- Provides a digital channel for discovering work opportunities.
+- Supports connections between job seekers and employers.
+- Includes job listings and application-management workflows.
+- Aims to make local and daily-wage opportunities easier to discover.
+- Can help broaden access to employment information.
+
+**Relevant UN target:**
+
+[Target 8.5 — Full and productive employment and decent work for all](https://sdgs.un.org/goals/goal8)
+
+This target calls for productive employment and decent work for women and men, including young people and persons with disabilities, and equal pay for work of equal value.
+
+### 🔵 SDG 10 — Reduced Inequalities
+
+**Supporting alignment**
+
+Workify aims to make job discovery more approachable for people who may not rely on traditional résumé-based recruitment or established professional networks.
+
+**How Workify aligns:**
+- Focuses on accessible job discovery.
+- Supports profiles that can communicate skills and experience.
+- Aims to connect employers and workers through a shared platform.
+- Provides opportunities to improve access to employment information.
+
+**Relevant UN target:**
+
+[Target 10.2 — Promote social, economic and political inclusion](https://sdgs.un.org/goals/goal10)
+
+This target focuses on empowering and promoting the inclusion of all people, irrespective of age, sex, disability, origin, or economic and other status.
+
+### 🌱 Intended Social Impact
+
+Workify aims to contribute to a more accessible employment ecosystem where people can discover opportunities and employers can reach potential workers.
+
+The platform's alignment with these SDGs represents its intended purpose, not a claim that it has independently measured social impact or received official UN endorsement.
+
+Future development could strengthen this contribution through accessibility improvements, transparent job information, worker-safety guidance, and measures to reduce discriminatory hiring practices.
 
 ## 🚀 Getting Started
 
+Follow these steps to run Workify locally.
+
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (LTS recommended)
-- npm (included with Node.js)
-- A MongoDB database, such as [MongoDB Atlas](https://www.mongodb.com/atlas)
+Ensure you have the following installed:
 
-### 1. Clone the repository
+- [Node.js](https://nodejs.org/) — LTS version recommended.
+- npm — Included with Node.js.
+- [MongoDB Atlas](https://www.mongodb.com/atlas) account or another accessible MongoDB deployment.
+
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/2208Prathamesh/workify.git
 cd workify
 ```
 
-### 2. Install dependencies
+### 2. Install Dependencies
 
 ```bash
 npm install
 ```
 
-### 3. Configure environment variables
+### 3. Configure Environment Variables
 
-Create your local `.env` file from the example template.
+Create a local `.env` file using the provided template.
 
 **Windows PowerShell**
 
@@ -124,10 +260,11 @@ Copy-Item .env.example .env
 cp .env.example .env
 ```
 
-Update `.env` with your own values:
+Add your configuration to `.env`:
 
 ```env
 MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>/<database>?retryWrites=true&w=majority
+
 SESSION_SECRET=replace-with-a-long-random-secret
 
 CLOUDINARY_CLOUD_NAME=your_cloud_name
@@ -137,130 +274,164 @@ CLOUDINARY_API_SECRET=your_api_secret
 NODE_ENV=development
 ```
 
-**Configuration notes**
-- Replace every placeholder with a real value; do not leave angle-bracket placeholders in a working URI.
-- In MongoDB Atlas, create a database user and configure Network Access for your development environment.
-- Cloudinary variables are needed for features that upload images.
-- Configure email/SMTP settings wherever your deployment's email workflow expects them.
-- Keep `.env` private. Never commit database passwords, API keys, or session secrets.
+Replace all placeholders with your actual configuration values.
 
-### 4. Run Workify
+**Important setup notes:**
 
-Start the server:
+- Configure your MongoDB database user and network access rules.
+- Ensure `MONGODB_URI` points to a valid database.
+- Configure Cloudinary credentials if you use image-upload functionality.
+- Keep `.env` private and never commit real credentials.
+- Use a unique, strong `SESSION_SECRET` in production.
+
+### 4. Start the Server
+
+Run the application:
 
 ```bash
 npm start
 ```
 
-For development with automatic restarts:
+For development with automatic restarts, use:
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+The development command requires Nodemon to be available. If it is not installed, run:
 
-> If `npm run dev` reports that `nodemon` is missing, install it with `npm install --save-dev nodemon`, or use `npm start`.
+```bash
+npm install --save-dev nodemon
+```
+
+### 5. Open Workify
+
+Visit:
+
+**http://localhost:3000**
+
+The frontend is served by the Express application.
 
 ## ⚙️ Environment Variables
 
-| Variable | Purpose | Required |
-|---|---|---|
-| `MONGODB_URI` | MongoDB connection string | Yes |
-| `SESSION_SECRET` | Secret used to sign session identifiers | Yes for production |
-| `CLOUDINARY_CLOUD_NAME` | Cloudinary cloud name for image uploads | For upload features |
-| `CLOUDINARY_API_KEY` | Cloudinary API key | For upload features |
-| `CLOUDINARY_API_SECRET` | Cloudinary API secret | For upload features |
-| `NODE_ENV` | Runtime environment; set to `production` for production deployment | Recommended |
-
-The exact variables needed may vary by feature. Review the relevant configuration and route files when enabling optional services.
-
-## 🔌 API Route Groups
-
-The server registers these route groups:
-
-| Base path | Purpose |
+| Variable | Description |
 |---|---|
-| `/api/auth` | Authentication and account access |
+| `MONGODB_URI` | MongoDB connection string |
+| `SESSION_SECRET` | Secret used to sign session identifiers |
+| `CLOUDINARY_CLOUD_NAME` | Cloudinary cloud name |
+| `CLOUDINARY_API_KEY` | Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | Cloudinary API secret |
+| `NODE_ENV` | Application runtime environment |
+
+MongoDB and a secure session secret are essential for a properly configured deployment. Cloudinary credentials are required for the corresponding media-upload features.
+
+## 🔌 API Overview
+
+The Express server registers the following API route groups:
+
+| Endpoint | Purpose |
+|---|---|
+| `/api/auth` | User authentication |
 | `/api/jobs` | Job listing operations |
 | `/api/applications` | Job applications |
-| `/api/profile` | User profile operations |
+| `/api/profile` | User profile management |
 | `/api/ratings` | Ratings and feedback |
-| `/api/messages` | User messaging |
+| `/api/messages` | Messaging |
 | `/api/notifications` | Notifications |
 | `/api/admin` | Administrative operations |
 
-HTTP methods, request bodies, and authorization rules are defined in the corresponding files under `routes/`.
+For implementation details, refer to the corresponding JavaScript files inside `routes/`.
 
 ## ☁️ Deployment
 
-Workify includes a `vercel.json` configuration and an Express server that serves frontend assets from `public/`.
+Workify includes Vercel configuration and is structured to serve its frontend assets through Express.
 
-Typical deployment checklist:
+### Deployment checklist
 
-1. Import the repository into Vercel.
-2. Add the required environment variables to the project settings.
-3. Verify that MongoDB accepts connections from the hosting environment.
-4. Set `NODE_ENV=production` and configure a strong, unique `SESSION_SECRET`.
-5. Configure Cloudinary and email settings if those features are enabled.
-6. Deploy and test authentication, job listings, applications, profiles, uploads, and email flows as applicable.
+1. Import the GitHub repository into Vercel.
+2. Configure the required environment variables.
+3. Verify MongoDB connectivity from the deployment environment.
+4. Set `NODE_ENV=production`.
+5. Configure a strong and unique session secret.
+6. Configure Cloudinary and email services when needed.
+7. Test authentication, profiles, job listings, applications, and other enabled workflows.
 
-### Production security checklist
+### Production Security
 
-Before using real users or production data:
+Before making the platform available to real users:
 
-- Replace the fallback session secret in `server.js` with a required environment variable.
-- Change or remove seeded demo credentials in `lib/mongoose.js`.
-- Review admin authorization, access controls, input validation, upload limits, and rate limiting.
-- Use HTTPS and verify secure session-cookie behavior in the hosting environment.
-- Restrict database network access to trusted sources wherever possible.
+- Remove the fallback session secret from the production configuration.
+- Change or remove automatically seeded administrator and demo-account credentials.
+- Review authentication, authorization, and administrator access controls.
+- Validate user input and restrict uploaded file types and sizes.
+- Configure secure cookies and HTTPS appropriately.
+- Restrict database access to trusted sources whenever possible.
+- Verify that application errors do not expose sensitive information.
 
-## 🗺️ Roadmap
+## 🗺️ Future Roadmap
 
-Potential improvements for future releases:
+Potential improvements for future development:
 
-- [ ] Enhance search, filters, and location-based job discovery.
-- [ ] Add automated tests for critical user workflows.
-- [ ] Document API request and response examples.
-- [ ] Strengthen input validation, rate limiting, and security checks.
-- [ ] Improve accessibility and mobile usability.
-- [ ] Add deployment health checks and monitoring.
+- [ ] Advanced job search and location-based filtering.
+- [ ] Improved mobile accessibility and responsive experiences.
+- [ ] Better validation and verification of job listings.
+- [ ] Stronger account security and abuse prevention.
+- [ ] Automated testing for important workflows.
+- [ ] Improved documentation with API request and response examples.
+- [ ] Accessibility improvements for users with disabilities.
+- [ ] Worker-safety guidance and transparent job information.
+- [ ] Evaluation of the platform's contribution to employment accessibility and SDG objectives.
 
 ## 🤝 Contributing
 
-Contributions, suggestions, and bug reports are welcome.
+Contributions, bug reports, and suggestions are welcome.
 
 1. Fork the repository.
-2. Create a feature branch: `git checkout -b feat/your-feature`.
+2. Create a feature branch.
+
+   ```bash
+   git checkout -b feat/your-feature
+   ```
+
 3. Make your changes and test them locally.
-4. Commit your changes: `git commit -m "feat: describe your change"`.
-5. Push the branch and open a Pull Request.
+4. Commit your changes.
 
-For substantial changes, open an issue first to discuss the proposal.
+   ```bash
+   git commit -m "feat: describe your change"
+   ```
 
-## 🐛 Issues & Feedback
+5. Push your branch and open a Pull Request.
 
-Found a bug or have an idea to improve Workify? Open an issue in the [GitHub Issues](https://github.com/2208Prathamesh/workify/issues).
+For significant changes, open an issue first to discuss the proposed improvement.
 
-## 👨‍💻 Author
+## 🐛 Issues and Feedback
+
+Found a bug or have an idea to improve Workify?
+
+[Open an issue on GitHub](https://github.com/2208Prathamesh/workify/issues)
+
+## 👨‍💻 Project Author
 
 **Prathamesh Barbole**
 
 - GitHub: [@2208Prathamesh](https://github.com/2208Prathamesh)
 - Repository: [2208Prathamesh/workify](https://github.com/2208Prathamesh/workify)
-- Live site: [workify.buildto.in](https://workify.buildto.in)
+- Live website: [workify.buildto.in](https://workify.buildto.in)
 
 ## 📄 License
 
-No dedicated open-source license is currently present in the repository. Until a license is added, the default copyright rules apply. Add a `LICENSE` file if you intend to permit reuse and redistribution.
+The repository's `package.json` specifies the ISC license, but a corresponding `LICENSE` file is not currently included. Add the appropriate license file to make the project's usage and redistribution terms explicit.
 
 ---
 
 <div align="center">
 
-**Workify — Work for Everyone.**  
-*Helping people connect through opportunity.*
+### Workify — Work for Everyone.
 
-[⬆ Back to top](#workify)
+**Technology with a purpose. Opportunities for everyone.**
+
+*Designed to support more accessible work discovery and contribute toward a more inclusive employment ecosystem.*
+
+[Back to Top](#workify)
 
 </div>
